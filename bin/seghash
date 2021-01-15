@@ -1,0 +1,35 @@
+#!/usr/bin/env node
+const fs = require('fs')
+const { Command } = require('@oclif/command')
+const errorHandler = require('@oclif/errors/handle.js')
+
+import('./seghash.mjs').then((module) => {
+  const seghash = module.default
+
+  class SegHash extends Command {
+    async run () {
+      const { args: { file } } = this.parse(SegHash)
+      const stream = file === '-' ? process.stdin : fs.createReadStream(file)
+
+      const { hash, length } = await seghash(stream)
+
+      this.log(`${hash.toString('hex')} ${length}`)
+    }
+  }
+
+  SegHash.args = [{
+    name: 'file',
+    description: 'segment to be analyzed',
+    default: '-'
+  }]
+
+  SegHash.description =
+`Determine the metadata required to deliver an MP4 fragment over live torrent.
+The output of this command is two values, separated by a single space
+character.  The first is the hex encoded SHA-1 signature of the
+fragment after appending zero-padding to make it a multiple of
+${seghash.PIECE_LENGTH.toLocaleString()} bytes. The second value is the byte
+length of the original segment, without zero padding.`
+
+  SegHash.run().catch(errorHandler)
+})
