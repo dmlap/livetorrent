@@ -7,12 +7,6 @@
       #output video {
         width: 100%;
       }
-      #progressBar {
-          height: 5px;
-          width: 0%;
-          background-color: #35b44f;
-          transition: width .4s ease-in-out;
-      }
       body.is-seed .show-seed {
           display: inline;
       }
@@ -51,7 +45,6 @@
   <body>
     <div id="hero">
       <div id="output">
-        <div id="progressBar"></div>
         <!-- The video player will be added here -->
         <video controls></video>
       </div>
@@ -70,8 +63,7 @@
           <code id="numPeers">0 peers</code>.
         </div>
         <div>
-          <code id="downloaded"></code>
-          of <code id="total"></code>
+          <code id="downloaded">0 seconds</code>
           — <span id="remaining"></span><br/>
           &#x2198;<code id="downloadSpeed">0 b/s</code>
           / &#x2197;<code id="uploadSpeed">0 b/s</code>
@@ -85,20 +77,48 @@
       import DemoPlayer from './src/demo-player.mjs'
       import LiveTorrent from './src/index.js'
 
-      const hlsUrl = document.querySelector('#torrentLink').href
-      const player = new DemoPlayer(document.querySelector('#output video'), hlsUrl)
-
-      // var client = new WebTorrent()
-
       // HTML elements
       var $body = document.body
-      var $progressBar = document.querySelector('#progressBar')
+      var $video = document.querySelector('#output video')
       var $numPeers = document.querySelector('#numPeers')
       var $downloaded = document.querySelector('#downloaded')
-      var $total = document.querySelector('#total')
       var $remaining = document.querySelector('#remaining')
       var $uploadSpeed = document.querySelector('#uploadSpeed')
       var $downloadSpeed = document.querySelector('#downloadSpeed')
+
+      const hlsUrl = document.querySelector('#torrentLink').href
+      const player = new DemoPlayer($video, hlsUrl)
+      player.addEventListener('progress', function () {
+        // Peers
+        // $numPeers.innerHTML = torrent.numPeers + (torrent.numPeers === 1 ? ' peer' : ' peers')
+
+        // Progress
+        let downloaded = 0
+        for (let i = 0; i < $video.buffered.length; i++) {
+          downloaded += $video.buffered.end(i) + $video.buffered.start(i)
+        }
+        $downloaded.innerHTML = downloaded.toLocaleString() + ' second' + (downloaded !== 1.0 ? 's' : '')
+
+        // Remaining time
+        // var remaining
+        // if (torrent.done) {
+        //   remaining = 'Done.'
+        // } else {
+        //   remaining = torrent.timeRemaining / 1000
+        //   remaining = remaining[0].toUpperCase() + remaining.substring(1) + ' remaining.'
+        // }
+        // $remaining.innerHTML = remaining
+
+        // // Speed rates
+        // $downloadSpeed.innerHTML = prettyBytes(torrent.downloadSpeed) + '/s'
+        // $uploadSpeed.innerHTML = prettyBytes(torrent.uploadSpeed) + '/s'
+      })
+      player.addEventListener('sourceended', function () {
+        $body.className += ' is-seed'
+        // onProgress()
+      })
+      // var client = new WebTorrent()
+
 
       // Download the torrent
       // client.add(hlsUrl, async function (torrent) {
@@ -115,34 +135,9 @@
 
       //   // Statistics
       //   function onProgress () {
-      //     // Peers
-      //     $numPeers.innerHTML = torrent.numPeers + (torrent.numPeers === 1 ? ' peer' : ' peers')
-
-      //     // Progress
-      //     var percent = Math.round(torrent.progress * 100 * 100) / 100
-      //     $progressBar.style.width = percent + '%'
-      //     $downloaded.innerHTML = prettyBytes(torrent.downloaded)
-      //     $total.innerHTML = prettyBytes(torrent.length)
-
-      //     // Remaining time
-      //     var remaining
-      //     if (torrent.done) {
-      //       remaining = 'Done.'
-      //     } else {
-      //       remaining = torrent.timeRemaining / 1000
-      //       remaining = remaining[0].toUpperCase() + remaining.substring(1) + ' remaining.'
-      //     }
-      //     $remaining.innerHTML = remaining
-
-      //     // Speed rates
-      //     $downloadSpeed.innerHTML = prettyBytes(torrent.downloadSpeed) + '/s'
-      //     $uploadSpeed.innerHTML = prettyBytes(torrent.uploadSpeed) + '/s'
-      //   }
-      //   function onDone () {
-      //     $body.className += ' is-seed'
-      //     onProgress()
       //   }
       // })
+
 
       // Human readable bytes util
       function prettyBytes(num) {
