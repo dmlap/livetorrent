@@ -1,5 +1,13 @@
 /* eslint-env browser */
 /* global m3u8Parser */
+
+/*
+   Demo Player: a (very simple) video player that uses LiveTorrent to
+   load a live HLS stream. In real life, you probably want to
+   integrate LiveTorrent with a more full-featured player like like
+   VideoJS or hls.js.
+*/
+
 import '../../node_modules/m3u8-parser/dist/m3u8-parser.js'
 import LiveTorrent from './index.js'
 
@@ -95,7 +103,7 @@ export default class DemoPlayer extends EventTarget {
     super()
     this._srcUrl = srcUrl
     this._video = video
-    this._livetorrent = new LiveTorrent(this._srcUrl.split('/').slice(0, -1).join('/'))
+    this.liveTorrent = new LiveTorrent(this._srcUrl.split('/').slice(0, -1).join('/'))
     this._fetches = Promise.resolve()
     this._segments = new Set()
     this._targetDuration = 6 / 3
@@ -150,7 +158,7 @@ export default class DemoPlayer extends EventTarget {
         }
         this._segments.add(file.uri)
         this._fetches = this._fetches.then(async () => {
-          const response = await this._livetorrent.fetch(file.uri)
+          const response = await this.liveTorrent.fetch(file.uri)
           if (!response.ok) {
             throw new Error(`Download failed for "${file.uri}"`)
           }
@@ -164,7 +172,7 @@ export default class DemoPlayer extends EventTarget {
         })
       }
 
-      this._livetorrent.update(files)
+      this.liveTorrent.update(files)
     }, () => {
       return this._logicalTime < 5
     }, this._targetDuration * 1000)

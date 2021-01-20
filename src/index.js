@@ -1,5 +1,13 @@
 /* global WebTorrent, Response */
 
+/*
+  LiveTorrent: live stream over BitTorrent. Use
+  `LiveTorrent.prototype.fetch` as a drop-in replacement for the
+  [Fetch API] in the video player or application of your choice.
+
+  [Fetch Api]: https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API
+*/
+
 const PIECE_LENGTH = Math.pow(2, 18)
 
 function buildParsedTorrent (baseUrl, files) {
@@ -174,6 +182,10 @@ export default class LiveTorrent {
     }
   }
 
+  // ------------------
+  // Torrent Management
+  // ------------------
+
   update (files) {
     if (!this._torrent) {
       return this._createTorrent(files)
@@ -202,5 +214,37 @@ export default class LiveTorrent {
         resolve(new Response(blob, { status: 200 }))
       })
     })
+  }
+
+  // ----------
+  // Statistics
+  // ----------
+
+  received () {
+    return (this._torrent && this._torrent.received) || 0
+  }
+
+  downloaded () {
+    return (this._torrent && this._torrent.downloaded) || 0
+  }
+
+  uploaded () {
+    return (this._torrent && this._torrent.uploaded) || 0
+  }
+
+  downloadSpeed () {
+    return (this._torrent && this._torrent.downloadSpeed) || 0
+  }
+
+  uploadSpeed () {
+    return (this._torrent && this._torrent.uploadSpeed) || 0
+  }
+
+  ratio () {
+    return (this._torrent && this._torrent.ratio) || 0
+  }
+
+  numPeers () {
+    return (this._torrent && this._torrent.numPeers) || 0
   }
 }
