@@ -10,12 +10,19 @@
 
 const PIECE_LENGTH = Math.pow(2, 18)
 
-function buildParsedTorrent (baseUrl, files) {
+function bufferToHex (arrayBuffer) {
+  return [...new Uint8Array(arrayBuffer)].map((byte) => {
+    return byte.toString(16).padStart(2, '0')
+  }).join('')
+}
+
+const ZERO_BYTE_SHA = 'da39a3ee5e6b4b0d3255bfef95601890afd80709'
+function buildParsedTorrent (baseUrl, files, infoHash) {
+  infoHash = infoHash || ZERO_BYTE_SHA
   const torrent = {
-    // empty file SHA-1 hash
-    infoHash: 'da39a3ee5e6b4b0d3255bfef95601890afd80709',
+    infoHash,
     comment: `LiveTorrent from "${baseUrl}"`,
-    urlList: [baseUrl],
+    urlList: [],
     pieceLength: PIECE_LENGTH,
     lastPieceLength: PIECE_LENGTH,
     pieces: [],
@@ -48,7 +55,8 @@ function buildParsedTorrent (baseUrl, files) {
   }
   torrent.info.files = torrent.files
   torrent.info['piece length'] = torrent.pieceLength
-  torrent.info.pieces = new Uint8Array(torrent.pieces.join('').match(/[\da-f]{2}/gi).map((pair) => {
+  const hexBytes = torrent.pieces.join('').match(/[\da-f]{2}/gi) || []
+  torrent.info.pieces = new Uint8Array(hexBytes.map((pair) => {
     return parseInt(pair, 16)
   }))
   return torrent
@@ -69,7 +77,15 @@ export default class LiveTorrent {
 
         this._torrent = torrent
         this._File = Object.getPrototypeOf(torrent.files[0]).constructor
-        this._Piece = Object.getPrototypeOf(torrent.pieces[0]).constructor
+        this._Piece = Object.getPrototypeOf(torrent.pieces.get(0)).constructor
+
+        // clear out the phony file data
+        torrent.files.splice(0, 2)
+        torrent.pieces.delete(0)
+        torrent.bitfield.delete(0)
+        torrent._hashes.delete(0)
+
+        torrent.addWebSeed(this._baseUrl)
         resolve()
       })
       this._webtorrent.on('error', reject)
@@ -80,20 +96,28 @@ export default class LiveTorrent {
   /**
    * Setup a torrent that will be used for streaming.
    */
-  _createTorrent (files) {
-    const torrent = buildParsedTorrent(this._baseUrl, files)
-    for (const file of files) {
-      this._knownHashes.add(file.hash)
-    }
+  async _createTorrent (files) {
+    const infoHash = await (crypto.subtle.digest(
+      'SHA-1', new TextEncoder().encode(this._baseUrl)
+    ).then(bufferToHex))
+    const parsedTorrent = buildParsedTorrent(this._baseUrl, [{
+      name: 'phony',
+      length: 1,
+      uri: 'phony',
+      hash: ''
+    }], infoHash)
 
-    this._webtorrent.add(torrent)
+    this._webtorrent.add(parsedTorrent)
+    await this._updateTorrent(files)
   }
 
   /**
    * Update torrent and web seeds with any files that aren't already
    * tracked by the torrent.
    */
-  _updateTorrent (files) {
+  async _updateTorrent (files) {
+    await this._ready
+
     // process & update metadata
     // TODO skipping this because it mutates the torrent object. It
     // would be good hygiene to update magnetURI and torrentFile
@@ -111,7 +135,7 @@ export default class LiveTorrent {
     if (additions.length === 0) {
       return
     }
-    let offset = torrent.pieceLength * (torrent.pieces.length - 1) + torrent.lastPieceLength
+    let offset = torrent.pieceLength * (torrent.pieces.size - 1) + torrent.lastPieceLength
     for (const addition of additions) {
       // update the file offsets to append the additions to the end of
       // the torrent
@@ -124,12 +148,10 @@ export default class LiveTorrent {
       // register the padded hash so it isn't added again
       this._knownHashes.add(files[i].hash)
       // add the new hashes to the torrent
-      torrent._hashes.push(files[i].hash)
+      torrent._hashes.set(torrent._hashes.size, files[i].hash)
     }
 
     // update rarity map
-    torrent._rarityMap._pieces.length += additions.length
-    torrent._rarityMap._numPieces = this._torrent._rarityMap._pieces.length
     torrent._rarityMap.recalculate()
 
     // update the chunk store
@@ -138,20 +160,18 @@ export default class LiveTorrent {
     // at minimum, internal file information would have to be updated
     // to use the default for node.js, FSChunkStore
     const lastFile = additions.slice(-1)[0]
-    // `torrent._store.length` is read-only because `_store` is a
-    // Function. Even though it is treated in the constructor as a
-    // byte count, it appears safe to ignore updating it.
+    // `torrent._store.length` is read-only (in Safari, at least)
+    // because `_store` is a Function. Even though it is treated in
+    // the constructor as a byte count, it appears safe to ignore
+    // updating it.
     torrent._store.lastChunkLength = Math.min(lastFile.length, PIECE_LENGTH)
     torrent._store.lastChunkIndex =
       Math.ceil((lastFile.offset + lastFile.length) / PIECE_LENGTH) - 1
 
     // add new pieces
-    for (let i = 0; i < parsedTorrent.pieces.length; i++) {
-      torrent.pieces.push(new this._Piece(PIECE_LENGTH))
+    for (const piece of parsedTorrent.pieces) {
+      torrent.pieces.set(torrent.pieces.size, new this._Piece(PIECE_LENGTH))
     }
-
-    // increase the range of the torrent bitfield
-    torrent.bitfield.grow = parsedTorrent.pieces.length
 
     // update metadata on wires
     torrent.wires.forEach((wire) => {
@@ -160,11 +180,9 @@ export default class LiveTorrent {
       if (wire.ut_metadata) wire.ut_metadata.setMetadata(torrent.metadata)
 
       if (wire.type === 'webSeed') {
-        for (let i = 0; i <= torrent.pieces.length; i++) {
-          wire.peerPieces.set(i, true)
+        for (const index of torrent.pieces.keys()) {
+          wire.peerPieces.set(index, true)
         }
-      } else {
-        wire.bitfield(torrent.bitfield)
       }
     })
 
@@ -178,7 +196,7 @@ export default class LiveTorrent {
         torrent.files[i].deselect()
       }
       // update reservations
-      torrent._reservations[i] = []
+      torrent._reservations.set(i, [])
     }
   }
 
@@ -186,11 +204,11 @@ export default class LiveTorrent {
   // Torrent Management
   // ------------------
 
-  update (files) {
+  async update (files) {
     if (!this._torrent) {
-      return this._createTorrent(files)
+      return await this._createTorrent(files)
     } else {
-      return this._updateTorrent(files)
+      return await this._updateTorrent(files)
     }
   }
 

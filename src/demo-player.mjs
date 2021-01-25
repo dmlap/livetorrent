@@ -151,6 +151,9 @@ export default class DemoPlayer extends EventTarget {
           uri: segment.uri
         }
       }))
+
+      await this.liveTorrent.update(files)
+
       for (const file of files) {
         if (this._segments.has(file.uri)) {
           // we've already seen this file
@@ -171,8 +174,6 @@ export default class DemoPlayer extends EventTarget {
           })
         })
       }
-
-      this.liveTorrent.update(files)
     }, () => {
       return this._logicalTime < 5
     }, this._targetDuration * 1000)
