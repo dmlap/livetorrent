@@ -1,3 +1,4 @@
+/* eslint-env browser */
 /* global WebTorrent, Response */
 
 /*
@@ -7,6 +8,8 @@
 
   [Fetch Api]: https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API
 */
+
+import PieceId from './piece-id.mjs'
 
 const PIECE_LENGTH = Math.pow(2, 18)
 
@@ -21,6 +24,7 @@ function buildParsedTorrent (baseUrl, files, infoHash) {
   infoHash = infoHash || ZERO_BYTE_SHA
   const torrent = {
     infoHash,
+    announce: ['wss://tracker.btorrent.xyz/', 'wss://tracker.openwebtorrent.com'],
     comment: `LiveTorrent from "${baseUrl}"`,
     urlList: [],
     pieceLength: PIECE_LENGTH,
@@ -31,15 +35,13 @@ function buildParsedTorrent (baseUrl, files, infoHash) {
       name: baseUrl.split('/').slice(-1)[0]
     }
   }
-  let offset = 0
   for (const file of files) {
     torrent.files.push({
       length: file.length,
       path: file.uri,
       name: file.uri,
-      offset
+      offset: 0
     })
-    offset += file.length
     const padLength = PIECE_LENGTH - (file.length % PIECE_LENGTH)
     if (padLength !== 0) {
       torrent.files.push({
@@ -47,9 +49,8 @@ function buildParsedTorrent (baseUrl, files, infoHash) {
         length: padLength,
         path: '.pad/' + padLength,
         name: '' + padLength,
-        offset
+        offset: padLength
       })
-      offset += padLength
     }
     torrent.pieces.push(file.hash)
   }
@@ -84,6 +85,8 @@ export default class LiveTorrent {
         torrent.pieces.delete(0)
         torrent.bitfield.delete(0)
         torrent._hashes.delete(0)
+        torrent._reservations.delete(0)
+        torrent.deselect(0, 0)
 
         torrent.addWebSeed(this._baseUrl)
         resolve()
@@ -125,30 +128,45 @@ export default class LiveTorrent {
     // this.metadata = this.torrentFile
 
     const torrent = this._torrent
-    const updateIx = files.findIndex((file) => {
-      return !this._knownHashes.has(file.hash)
+    const additions = new Map()
+    files.forEach((file) => {
+      const id = PieceId.toNumber(file.variant || 0, file.segment, 0)
+      if (torrent.pieces.has(id)) {
+        return
+      }
+
+      additions.set(id, file)
+
+      // add content and padding files
+      const padLength = PIECE_LENGTH - (file.length % PIECE_LENGTH)
+      torrent.files.push(new this._File(torrent, {
+        length: file.length,
+        path: file.uri,
+        name: file.uri,
+        offset: id * PIECE_LENGTH
+      }))
+      if (padLength !== 0) {
+        torrent.files.push(new this._File(torrent, {
+          attr: 'p',
+          length: padLength,
+          path: '.pad/' + padLength,
+          name: '' + padLength,
+          offset: id * PIECE_LENGTH + file.length
+        }))
+      }
+      // add hash
+      torrent._hashes.set(id, file.hash)
+      // add pieces and update reservations
+      // use `ceil` because the pad file takes up the remainder of the
+      // piece when necessary
+      const pieceCount = Math.ceil(file.length / PIECE_LENGTH)
+      for (let i = 0; i < pieceCount; i++) {
+        torrent.pieces.set(id + i, new this._Piece(PIECE_LENGTH))
+        torrent._reservations.set(id + i, [])
+      }
     })
-    const parsedTorrent = buildParsedTorrent(
-      this._baseUrl, files.slice(updateIx)
-    )
-    const additions = parsedTorrent.files
-    if (additions.length === 0) {
+    if (additions.size === 0) {
       return
-    }
-    let offset = torrent.pieceLength * (torrent.pieces.size - 1) + torrent.lastPieceLength
-    for (const addition of additions) {
-      // update the file offsets to append the additions to the end of
-      // the torrent
-      addition.offset = offset
-      offset += addition.length
-      // append the content and padding files
-      torrent.files.push(new this._File(torrent, addition))
-    }
-    for (let i = updateIx; i < files.length; i++) {
-      // register the padded hash so it isn't added again
-      this._knownHashes.add(files[i].hash)
-      // add the new hashes to the torrent
-      torrent._hashes.set(torrent._hashes.size, files[i].hash)
     }
 
     // update rarity map
@@ -159,19 +177,12 @@ export default class LiveTorrent {
     // default in a browser)
     // at minimum, internal file information would have to be updated
     // to use the default for node.js, FSChunkStore
-    const lastFile = additions.slice(-1)[0]
     // `torrent._store.length` is read-only (in Safari, at least)
     // because `_store` is a Function. Even though it is treated in
     // the constructor as a byte count, it appears safe to ignore
     // updating it.
-    torrent._store.lastChunkLength = Math.min(lastFile.length, PIECE_LENGTH)
-    torrent._store.lastChunkIndex =
-      Math.ceil((lastFile.offset + lastFile.length) / PIECE_LENGTH) - 1
-
-    // add new pieces
-    for (const piece of parsedTorrent.pieces) {
-      torrent.pieces.set(torrent.pieces.size, new this._Piece(PIECE_LENGTH))
-    }
+    torrent._store.lastChunkLength = PIECE_LENGTH
+    torrent._store.lastChunkIndex = PIECE_LENGTH - 1
 
     // update metadata on wires
     torrent.wires.forEach((wire) => {
@@ -180,24 +191,17 @@ export default class LiveTorrent {
       if (wire.ut_metadata) wire.ut_metadata.setMetadata(torrent.metadata)
 
       if (wire.type === 'webSeed') {
-        for (const index of torrent.pieces.keys()) {
-          wire.peerPieces.set(index, true)
-        }
+        torrent.pieces.forEach((piece, id) => {
+          wire.peerPieces.set(id, true)
+        })
       }
     })
 
     // now that the torrent state is updated, trigger interest in the
     // new files
-    for (let i = torrent.files.length - additions.length; i < torrent.files.length; i++) {
-      // add new files to selection list
-      if (!torrent.so || torrent.so.includes(i)) {
-        torrent.files[i].select()
-      } else {
-        torrent.files[i].deselect()
-      }
-      // update reservations
-      torrent._reservations.set(i, [])
-    }
+    additions.forEach((file, id) => {
+      torrent.select(id, id)
+    })
   }
 
   // ------------------

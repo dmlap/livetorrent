@@ -143,12 +143,17 @@ export default class DemoPlayer extends EventTarget {
       const files = [{
         hash: parser.manifest.custom.bt.hash,
         length: parser.manifest.custom.bt.length,
-        uri: parser.manifest.segments[0].map.uri
-      }].concat(parser.manifest.segments.map((segment) => {
+        uri: parser.manifest.segments[0].map.uri,
+
+        variant: 0, // optional, defaults to 0
+        segment: 0
+      }].concat(parser.manifest.segments.map((segment, index) => {
         return {
           hash: segment.custom.bt.hash,
           length: segment.custom.bt.length,
-          uri: segment.uri
+          uri: segment.uri,
+
+          segment: parser.manifest.mediaSequence + index + 1
         }
       }))
 
@@ -166,10 +171,14 @@ export default class DemoPlayer extends EventTarget {
             throw new Error(`Download failed for "${file.uri}"`)
           }
           const data = await response.arrayBuffer()
-          console.log(file.uri + '\n' + hexdump(data).slice(0, (12 + 16 + 1) * 5))
+          console.log(
+            file.uri + '\n%c' +
+              hexdump(data).split('\n').slice(0, 3).join('\n'),
+            'font-family: monospace'
+          )
 
           return append(sourceBuffer, data).then(() => {
-            console.log(`appended ${data.byteLength} bytes of ${file.uri}`)
+            console.log(`Appended ${data.byteLength} bytes of ${file.uri}`)
             this.dispatchEvent(new Event('progress'))
           })
         })

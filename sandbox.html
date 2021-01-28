@@ -2,8 +2,38 @@
 <html>
   <head>
     <meta charset="UTF-8">
-    <title>WebTorrent video player</title>
+    <title>LiveTorrent Sandbox</title>
     <style>
+      body {
+        color: #394040;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+        margin: 0;
+        padding: 0;
+      }
+      header > h1, main {
+        box-sizing: border-box;
+        width: 100%;
+        margin: 0 auto;
+        max-width: 60rem;
+      }
+      header, main {
+        padding: .5rem;
+      }
+      header {
+        border-bottom: thin solid #e6e6e6;
+      }
+      h1 {
+        font-family: 'Asap', system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+        font-size: 2rem;
+        margin: .5rem 0;
+        padding: .5rem;
+      }
+      #logo {
+        background: center left url('docs/webtorrent-small.png') no-repeat;
+        background-size: 2.5rem 2.5rem;
+        padding-left: 3.75rem;
+        line-height: 2.5rem;
+      }
       #output video {
         width: 100%;
       }
@@ -41,35 +71,42 @@
           text-decoration: none;
       }
     </style>
+    <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Asap:400,700">
   </head>
   <body>
-    <div id="hero">
-      <div id="output">
-        <!-- The video player will be added here -->
-        <video controls></video>
-      </div>
-      <!-- Statistics -->
-      <div id="status">
-        <div>
-          <span class="show-leech">Downloading </span>
-          <span class="show-seed">Seeding </span>
-          <code>
-            <!-- Informative link to the torrent file -->
-            <!-- <a id="torrentLink" href="event/index.m3u8">Local Stream</a> -->
-            <a id="torrentLink" href="example/index.m3u8">Bip Bop</a>
-            <!-- <a id="torrentLink" href="https://webtorrent.io/torrents/sintel.torrent">Sintel</a> -->
-          </code>
-          <span class="show-leech"> from </span>
-          <span class="show-seed"> to </span>
-          <code id="numPeers">0 peers</code>.
+    <header>
+      <h1 id="logo">LiveTorrent</h1>
+    </header>
+    <main>
+      <p>Use this page to experiment and try out changes to LiveTorrent.</p>
+      <div id="hero">
+        <div id="output">
+          <!-- The video player will be added here -->
+          <video controls></video>
         </div>
-        <div>
-          Loaded <code id="downloaded">0 seconds</code><br />
-          &#x2198;<code id="downloadSpeed">0 b/s</code>
-          / &#x2197;<code id="uploadSpeed">0 b/s</code>
+        <!-- Statistics -->
+        <div id="status">
+          <div>
+            <span class="show-leech">Downloading </span>
+            <span class="show-seed">Seeding </span>
+            <code>
+              <!-- Informative link to the torrent file -->
+              <!-- <a id="torrentLink" href="event/index.m3u8">Local Stream</a> -->
+              <a id="torrentLink" href="example/index.m3u8">Bip Bop</a>
+              <!-- <a id="torrentLink" href="https://webtorrent.io/torrents/sintel.torrent">Sintel</a> -->
+            </code>
+            <span class="show-leech"> from </span>
+            <span class="show-seed"> to </span>
+            <code id="numPeers">0 peers</code>.
+          </div>
+          <div>
+            Loaded <code id="downloaded">0 seconds</code><br />
+            &#x2198;<code id="downloadSpeed">0 b/s</code>
+            / &#x2197;<code id="uploadSpeed">0 b/s</code>
+          </div>
         </div>
       </div>
-    </div>
+    </main>
     <!-- use the watchified version of webtorrent for debugging and development -->
     <script src="node_modules/webtorrent/webtorrent.debug.js"></script>
 
@@ -77,17 +114,7 @@
       import DemoPlayer from './src/demo-player.mjs'
       import LiveTorrent from './src/index.js'
 
-      // HTML elements
-      var $body = document.body
-      var $video = document.querySelector('#output video')
-      var $numPeers = document.querySelector('#numPeers')
-      var $downloaded = document.querySelector('#downloaded')
-      var $uploadSpeed = document.querySelector('#uploadSpeed')
-      var $downloadSpeed = document.querySelector('#downloadSpeed')
-
-      const hlsUrl = document.querySelector('#torrentLink').href
-      const player = new DemoPlayer($video, hlsUrl)
-      player.addEventListener('progress', function () {
+      function updateProgress () {
         // Peers
         $numPeers.innerHTML = player.liveTorrent.numPeers() + (player.liveTorrent.numPeers() === 1 ? ' peer' : ' peers')
 
@@ -101,36 +128,31 @@
         // // Speed rates
         $downloadSpeed.innerHTML = prettyBytes(player.liveTorrent.downloadSpeed()) + '/s'
         $uploadSpeed.innerHTML = prettyBytes(player.liveTorrent.uploadSpeed()) + '/s'
-      })
+      }
+
+      // HTML elements
+      const $body = document.body
+      const $video = document.querySelector('#output video')
+      const $numPeers = document.querySelector('#numPeers')
+      const $downloaded = document.querySelector('#downloaded')
+      const $uploadSpeed = document.querySelector('#uploadSpeed')
+      const $downloadSpeed = document.querySelector('#downloadSpeed')
+
+      const hlsUrl = document.querySelector('#torrentLink').href
+      const player = new DemoPlayer($video, hlsUrl)
+
+      // Trigger statistics refresh
+      player.addEventListener('progress', updateProgress)
+      setInterval(updateProgress, 500)
+      updateProgress()
+
       player.addEventListener('sourceended', function () {
         $body.className += ' is-seed'
-        // onProgress()
       })
-      // var client = new WebTorrent()
-
-
-      // Download the torrent
-      // client.add(hlsUrl, async function (torrent) {
-
-      //   // Append the files in the torrent through a MediaSource
-      //   const video = document.querySelector('#output video')
-      //   await stream(video, torrent.files)
-      //   video.currentTime = video.buffered.start(0)
-
-      //   // Trigger statistics refresh
-      //   torrent.on('done', onDone)
-      //   setInterval(onProgress, 500)
-      //   onProgress()
-
-      //   // Statistics
-      //   function onProgress () {
-      //   }
-      // })
-
 
       // Human readable bytes util
       function prettyBytes(num) {
-        var exponent, unit, neg = num < 0, units = ['B', 'kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB']
+        let exponent, unit, neg = num < 0, units = ['B', 'kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB']
         if (neg) num = -num
         if (num < 1) return (neg ? '-' : '') + num + ' B'
         exponent = Math.min(Math.floor(Math.log(num) / Math.log(1000)), units.length - 1)
