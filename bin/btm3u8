@@ -1,0 +1,32 @@
+#!/usr/bin/env node
+const fs = require('fs')
+const Readable = require('stream').Readable
+const { Command } = require('@oclif/command')
+const errorHandler = require('@oclif/errors/handle.js')
+
+import('./btm3u8.mjs').then((module) => {
+  const btm3u8 = new module.default()
+
+  class BTM3U8 extends Command {
+    async run () {
+      const { args: { m3u8 } } = this.parse(BTM3U8)
+      const stream = m3u8 === '-' ? process.stdin : fs.createReadStream(m3u8)
+
+      const transform = btm3u8.transform(stream)
+      for await (const line of transform) {
+        process.stdout.write(line)
+        process.stdout.write('\n')
+      }
+    }
+  }
+
+  BTM3U8.args = [{
+    name: 'm3u8',
+    description: 'm3u8 file to be processed',
+    default: '-'
+  }]
+
+  BTM3U8.description = `Add EXT-X-BT tags to an HLS manifest.`
+
+  BTM3U8.run().catch(errorHandler)
+})

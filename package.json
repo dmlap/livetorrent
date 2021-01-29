@@ -6,7 +6,9 @@
   "scripts": {
     "test": "mocha && standard"
   },
-  "files":  ["*"],
+  "files": [
+    "*"
+  ],
   "keywords": [
     "torrent",
     "bittorrent",
@@ -29,6 +31,7 @@
   },
   "dependencies": {
     "@oclif/command": "^1.8.0",
+    "cross-fetch": "^3.0.6",
     "m3u8-parser": "^4.5.2"
   }
 }
