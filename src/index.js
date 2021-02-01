@@ -71,6 +71,7 @@ export default class LiveTorrent {
 
     this._knownHashes = new Set()
     this._torrent = null
+    this._peers = []
     this._File = null
     this._Piece = null
     this._ready = new Promise((resolve, reject) => {
@@ -78,6 +79,12 @@ export default class LiveTorrent {
         if (this._torrent) return
 
         this._torrent = torrent
+        this._torrent.on('wire', (wire) => {
+          this._peers.push(wire)
+          wire.once('close', () => {
+            this._peers.splice(this._peers.indexOf(wire), 1)
+          })
+        })
         this._File = Object.getPrototypeOf(torrent.files[0]).constructor
         this._Piece = Object.getPrototypeOf(torrent.pieces.get(0)).constructor
 
@@ -269,5 +276,18 @@ export default class LiveTorrent {
 
   numPeers () {
     return (this._torrent && this._torrent.numPeers) || 0
+  }
+
+  peerStats () {
+    return this._peers.map((peer) => {
+      return {
+        name: peer._debugId || peer.peerId,
+        type: peer.type,
+        downloaded: peer.downloaded,
+        downloadSpeed: peer.downloadSpeed(),
+        uploaded: peer.uploaded,
+        uploadSpeed: peer.uploadSpeed()
+      }
+    })
   }
 }

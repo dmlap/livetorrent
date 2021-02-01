@@ -66,6 +66,27 @@
           font-size: 17px;
           padding: 5px;
       }
+      #peerStats {
+        border: none;
+        border-collapse: collapse;
+        margin-top: 1rem;
+        width: 100%;
+      }
+      #peerStats thead td {
+        background-color: #154820;
+        color: #fff;
+        font-size: 110%;
+        padding: .25rem 1rem;
+      }
+      #peerStats tbody tr+tr td {
+        border-top: thin solid #e6e6e6;
+      }
+      #peerStats tbody td {
+        padding: .5rem 1rem;
+      }
+      #peerStats .closed {
+        background-color: #e6e6e6;
+      }
       a:link, a:visited {
           color: #30a247;
           text-decoration: none;
@@ -82,7 +103,7 @@
       <div id="hero">
         <div id="output">
           <!-- The video player will be added here -->
-          <video controls></video>
+          <video autoplay controls></video>
         </div>
         <!-- Statistics -->
         <div id="status">
@@ -91,8 +112,8 @@
             <span class="show-seed">Seeding </span>
             <code>
               <!-- Informative link to the torrent file -->
-              <!-- <a id="torrentLink" href="event/index.m3u8">Local Stream</a> -->
-              <a id="torrentLink" href="example/index.m3u8">Bip Bop</a>
+              <a id="torrentLink" href="event/bt_index.m3u8">Local Stream</a>
+              <!-- <a id="torrentLink" href="example/index.m3u8">Bip Bop</a> -->
               <!-- <a id="torrentLink" href="https://webtorrent.io/torrents/sintel.torrent">Sintel</a> -->
             </code>
             <span class="show-leech"> from </span>
@@ -101,11 +122,20 @@
           </div>
           <div>
             Loaded <code id="downloaded">0 seconds</code><br />
-            &#x2198;<code id="downloadSpeed">0 b/s</code>
-            / &#x2197;<code id="uploadSpeed">0 b/s</code>
+            &#x2198;<code id="downloadSpeed">0 B/s</code>
+            / &#x2197;<code id="uploadSpeed">0 B/s</code>
           </div>
         </div>
       </div>
+      <table id="peerStats">
+        <thead>
+          <tr>
+            <td>ID</td><td>Type</td><td>Downloaded</td><td>Uploaded</td>
+          </tr>
+        </thead>
+        <tbody>
+        </tbody>
+      </table>
     </main>
     <!-- use the watchified version of webtorrent for debugging and development -->
     <script src="node_modules/webtorrent/webtorrent.debug.js"></script>
@@ -114,21 +144,6 @@
       import DemoPlayer from './src/demo-player.mjs'
       import LiveTorrent from './src/index.js'
 
-      function updateProgress () {
-        // Peers
-        $numPeers.innerHTML = player.liveTorrent.numPeers() + (player.liveTorrent.numPeers() === 1 ? ' peer' : ' peers')
-
-        // Progress
-        let downloaded = 0
-        for (let i = 0; i < $video.buffered.length; i++) {
-          downloaded += $video.buffered.end(i) + $video.buffered.start(i)
-        }
-        $downloaded.innerHTML = downloaded.toLocaleString() + ' second' + (downloaded !== 1.0 ? 's' : '')
-
-        // // Speed rates
-        $downloadSpeed.innerHTML = prettyBytes(player.liveTorrent.downloadSpeed()) + '/s'
-        $uploadSpeed.innerHTML = prettyBytes(player.liveTorrent.uploadSpeed()) + '/s'
-      }
 
       // HTML elements
       const $body = document.body
@@ -137,9 +152,11 @@
       const $downloaded = document.querySelector('#downloaded')
       const $uploadSpeed = document.querySelector('#uploadSpeed')
       const $downloadSpeed = document.querySelector('#downloadSpeed')
+      const $peerTable = document.querySelector('#peerStats tbody')
 
       const hlsUrl = document.querySelector('#torrentLink').href
       const player = new DemoPlayer($video, hlsUrl)
+      const peerRows = new Map()
 
       // Trigger statistics refresh
       player.addEventListener('progress', updateProgress)
@@ -159,6 +176,60 @@
         num = Number((num / Math.pow(1000, exponent)).toFixed(2))
         unit = units[exponent]
         return (neg ? '-' : '') + num + ' ' + unit
+      }
+
+      function updatePeerTable () {
+        function createPeerRow (peer) {
+          const $tr = document.createElement('tr')
+          let $td = document.createElement('td')
+          $td.innerText = peer.name
+          $tr.appendChild($td)
+          $td = document.createElement('td')
+          $td.innerText = peer.type
+          $tr.appendChild($td)
+          $td = document.createElement('td')
+          $td.innerText = peer.downloaded.toLocaleString()
+          $tr.appendChild($td)
+          $td = document.createElement('td')
+          $td.innerText = peer.uploaded.toLocaleString()
+          $tr.appendChild($td)
+          return $tr
+        }
+        const closedPeers = new Set(peerRows.keys())
+        for (const stat of player.liveTorrent.peerStats()) {
+          let $tr = peerRows.get(stat.name)
+          if (!$tr) {
+            $tr = createPeerRow(stat)
+            $peerTable.appendChild($tr)
+            peerRows.set(stat.name, $tr)
+          } else {
+            closedPeers.delete(stat.name)
+          }
+          const $tds = $tr.querySelectorAll('td')
+          $tds[2].innerText = prettyBytes(stat.downloaded)
+          $tds[3].innerText = prettyBytes(stat.uploaded)
+        }
+        for (const closed of closedPeers) {
+          peerRows.get(closed).classList.add('closed')
+        }
+      }
+
+      function updateProgress () {
+        // Peers
+        $numPeers.innerHTML = player.liveTorrent.numPeers() + (player.liveTorrent.numPeers() === 1 ? ' peer' : ' peers')
+
+        // Progress
+        let downloaded = 0
+        for (let i = 0; i < $video.buffered.length; i++) {
+          downloaded += $video.buffered.end(i) + $video.buffered.start(i)
+        }
+        $downloaded.innerHTML = downloaded.toLocaleString() + ' second' + (downloaded !== 1.0 ? 's' : '')
+
+        // // Speed rates
+        $downloadSpeed.innerHTML = prettyBytes(player.liveTorrent.downloadSpeed()) + '/s'
+        $uploadSpeed.innerHTML = prettyBytes(player.liveTorrent.uploadSpeed()) + '/s'
+
+        updatePeerTable()
       }
     </script>
   </body>
