@@ -1,30 +1,66 @@
 #!/usr/bin/env node
 const fs = require('fs')
 const Readable = require('stream').Readable
-const { Command } = require('@oclif/command')
+const chokidar = require('chokidar')
+const { Command, flags } = require('@oclif/command')
 const errorHandler = require('@oclif/errors/handle.js')
 
 import('./btm3u8.mjs').then((module) => {
   const btm3u8 = new module.default()
 
   class BTM3U8 extends Command {
-    async run () {
-      const { args: { m3u8 } } = this.parse(BTM3U8)
-      const stream = m3u8 === '-' ? process.stdin : fs.createReadStream(m3u8)
+    async _transform (source, target) {
+      const inputStream = source === '-' ? process.stdin : fs.createReadStream(source)
+      const outputStream = !target ? process.stdout : fs.createWriteStream(target)
 
-      const transform = btm3u8.transform(stream)
+      const transform = btm3u8.transform(inputStream)
       for await (const line of transform) {
-        process.stdout.write(line)
-        process.stdout.write('\n')
+        outputStream.write(line)
+        outputStream.write('\n')
       }
+      if (target) {
+        outputStream.end()
+      }
+    }
+
+    async run () {
+      const { args, flags } = this.parse(BTM3U8)
+      const source = args['source_m3u8']
+      const target = args['target_m3u8']
+
+      if (!flags.watch) {
+        return this._transform(source, target)
+      }
+      if (source === '-') {
+        this.error('You have to specify a source file when using --watch')
+        this.exit(1)
+      }
+      if (!target) {
+        this.error('You have to specify a target file when using --watch')
+        this.exit(1)
+      }
+      const watcher = chokidar.watch(source)
+      watcher.on('change', this._transform.bind(this, source, target))
+      watcher.on('ready', this._transform.bind(this, source, target))
     }
   }
 
   BTM3U8.args = [{
-    name: 'm3u8',
-    description: 'm3u8 file to be processed',
+    name: 'source_m3u8',
+    description: 'The m3u8 file to be processed',
     default: '-'
+  }, {
+    name: 'target_m3u8',
+    description: 'The location to write the output m3u8 file. Defaults to ' +
+      'standard output. If using --watch, this option is required.'
   }]
+
+  BTM3U8.flags = {
+    watch: flags.boolean({
+      char: 'w',
+      description: 'Watch the m3u8 and re-run whenever it is updated'
+    })
+  }
 
   BTM3U8.description = `Add EXT-X-BT tags to an HLS manifest.`
 
