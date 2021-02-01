@@ -98,6 +98,8 @@ const SEGMENT_PARSER = {
   dataParser: btAttrListParser
 }
 
+const debug = false
+
 export default class DemoPlayer extends EventTarget {
   constructor (video, srcUrl) {
     super()
@@ -108,8 +110,6 @@ export default class DemoPlayer extends EventTarget {
     this._segments = new Set()
     this._targetDuration = 6 / 3
 
-    this._logicalTime = 0
-
     this._setup()
   }
 
@@ -118,6 +118,18 @@ export default class DemoPlayer extends EventTarget {
   }
 
   async _setup () {
+    this._video.addEventListener('progress', () => {
+      const video = this._video
+      const bufferLength = video.buffered.length
+      if (bufferLength > 0 &&
+          video.currentTime < video.buffered.start(bufferLength - 1)) {
+        // seek to the last buffered range so gaps in media don't
+        // stall the player forever
+        console.log(`setting start time to ${this._video.buffered.start(bufferLength - 1)}`)
+        video.currentTime = video.buffered.start(bufferLength - 1)
+      }
+    })
+
     const mediaSource = await attachMediaSource(this._video)
     const sourceBuffer = mediaSource.addSourceBuffer('video/mp4;codecs="mp4a.40.2,avc1.4d401e"')
 
@@ -126,8 +138,7 @@ export default class DemoPlayer extends EventTarget {
     mediaSource.addEventListener('sourceclose', this._redispatch.bind(this))
 
     doWhile(async () => {
-      const response = await fetch(`example/live${this._logicalTime}.m3u8`) // this._srcUrl)
-      this._logicalTime++
+      const response = await fetch(this._srcUrl)
 
       if (!response.ok) {
         throw new Error(`Status ${response.statusCode} from "${this._srcUrl}": ${response.statusText}`)
@@ -171,20 +182,20 @@ export default class DemoPlayer extends EventTarget {
             throw new Error(`Download failed for "${file.uri}"`)
           }
           const data = await response.arrayBuffer()
-          console.log(
+          debug && console.log(
             file.uri + '\n%c' +
               hexdump(data).split('\n').slice(0, 3).join('\n'),
             'font-family: monospace'
           )
 
           return append(sourceBuffer, data).then(() => {
-            console.log(`Appended ${data.byteLength} bytes of ${file.uri}`)
+            debug && console.log(`Appended ${data.byteLength} bytes of ${file.uri}`)
             this.dispatchEvent(new Event('progress'))
           })
         })
       }
     }, () => {
-      return this._logicalTime < 5
+      return true
     }, this._targetDuration * 1000)
   }
 }

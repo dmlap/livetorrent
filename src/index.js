@@ -12,6 +12,7 @@
 import PieceId from './piece-id.mjs'
 
 const PIECE_LENGTH = Math.pow(2, 18)
+const PIECE_HASH_LENGTH = 40
 
 function bufferToHex (arrayBuffer) {
   return [...new Uint8Array(arrayBuffer)].map((byte) => {
@@ -154,14 +155,14 @@ export default class LiveTorrent {
           offset: id * PIECE_LENGTH + file.length
         }))
       }
-      // add hash
-      torrent._hashes.set(id, file.hash)
-      // add pieces and update reservations
+      // add pieces, hash, and update reservations
       // use `ceil` because the pad file takes up the remainder of the
       // piece when necessary
       const pieceCount = Math.ceil(file.length / PIECE_LENGTH)
       for (let i = 0; i < pieceCount; i++) {
         torrent.pieces.set(id + i, new this._Piece(PIECE_LENGTH))
+        const hashIx = i * PIECE_HASH_LENGTH
+        torrent._hashes.set(id + i, file.hash.slice(hashIx, hashIx + PIECE_HASH_LENGTH))
         torrent._reservations.set(id + i, [])
       }
     })
